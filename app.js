@@ -1,79 +1,175 @@
 
+// ========================================
+// FOREVER CLOUD - APP.JS
+// Complete storage application
+// ========================================
 
-/* ========================================
-   FOREVER CLOUD STORAGE
-   Complete Supabase App
-======================================== */
-
-// SUPABASE CONFIGURATION
 const SUPABASE_URL = "https://kapzuwhpjbfeofetuqbo.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_jC018UdtJFVK7sG_YZ39oA_nH0ZhwID";
+const SUPABASE_ANON_KEY = "YOUR_EXISTING_PUBLISHABLE_KEY";
 
 const REDIRECT_URL = "https://mycloudstoragegithubio.vercel.app/";
 
-// INITIALIZE SUPABASE
+const OWNER_EMAIL = "t8505243@gmail.com";
+const STORAGE_LIMIT = 10000000000000; // 10 TB
+
 const client = window.supabase.createClient(
   SUPABASE_URL,
   SUPABASE_ANON_KEY
 );
 
-// HTML ELEMENTS
 const $ = id => document.getElementById(id);
-
-const setupNotice = $("setupNotice");
-const authPanel = $("authPanel");
-const storagePanel = $("storagePanel");
-const authForm = $("authForm");
-
-const emailInput = $("emailInput");
-const passwordInput = $("passwordInput");
-const authSubmit = $("authSubmit");
-const authMessage = $("authMessage");
-
-const loginTab = $("loginTab");
-const signupTab = $("signupTab");
-
-const fileInput = $("fileInput");
-const fileGrid = $("fileGrid");
-const searchInput = $("searchInput");
-const sortSelect = $("sortSelect");
-
-const toast = $("toast");
 
 let currentUser = null;
 let allFiles = [];
 let authMode = "login";
+let previewUrl = null;
 
 // ========================================
-// UI HELPERS
+// STYLES FOR EDITOR AND VIEWER
+// ========================================
+
+const extraStyles = document.createElement("style");
+
+extraStyles.textContent = `
+.fc-modal {
+  position:fixed; inset:0; z-index:99999;
+  background:rgba(0,0,0,.88);
+  display:flex; align-items:center; justify-content:center;
+  padding:14px;
+}
+.fc-window {
+  width:min(900px,100%); max-height:92vh;
+  overflow:auto; background:#111a30;
+  color:white; border:1px solid #34415d;
+  border-radius:16px; padding:18px;
+}
+.fc-window img {
+  max-width:100%; max-height:70vh;
+  object-fit:contain; display:block; margin:auto;
+}
+.fc-window video {
+  width:100%; max-height:70vh; background:black;
+}
+.fc-editor {
+  width:100%; min-height:55vh;
+  resize:vertical; box-sizing:border-box;
+  background:#080f20; color:white;
+  border:1px solid #46516d; border-radius:8px;
+  padding:14px; font:14px monospace;
+}
+.fc-actions {
+  display:flex; gap:10px; flex-wrap:wrap;
+  margin-top:14px;
+}
+.fc-actions button {
+  padding:10px 16px; border:0;
+  border-radius:8px; cursor:pointer;
+}
+.fc-primary {background:#7164f5;color:white}
+.fc-secondary {background:#34415d;color:white}
+.file-item {
+  padding:14px; margin-bottom:10px;
+  border:1px solid #34415d; border-radius:12px;
+  display:flex; flex-wrap:wrap;
+  align-items:center; gap:10px;
+}
+.file-item strong {overflow-wrap:anywhere; flex:1}
+.file-item button {
+  padding:8px 12px; border-radius:7px;
+  cursor:pointer;
+}
+.fc-quota {
+  margin-top:8px; height:8px;
+  background:#29334b; border-radius:10px;
+  overflow:hidden;
+}
+.fc-quota div {
+  height:100%; background:#7164f5;
+}
+`;
+
+document.head.appendChild(extraStyles);
+
+// ========================================
+// HELPERS
 // ========================================
 
 function notify(message) {
+  const toast = $("toast");
   toast.textContent = message;
   toast.classList.add("show");
 
-  setTimeout(() => {
-    toast.classList.remove("show");
-  }, 3500);
+  setTimeout(() => toast.classList.remove("show"), 3500);
 }
 
+function isUnlimited() {
+  return currentUser?.email?.toLowerCase() === OWNER_EMAIL;
+}
+
+function formatSize(bytes) {
+  if (!bytes) return "0 B";
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    4
+  );
+
+  return (bytes / Math.pow(1024, index)).toFixed(2)
+    + " " + units[index];
+}
+
+function getFileSize(file) {
+  return Number(file.metadata?.size || 0);
+}
+
+function getFileType(file) {
+  const name = file.name.toLowerCase();
+  const mime = file.metadata?.mimetype || "";
+
+  if (mime.startsWith("image/") ||
+      /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif)$/.test(name)) {
+    return "image";
+  }
+
+  if (mime.startsWith("video/") ||
+      /\.(mp4|webm|mov|m4v|ogv)$/.test(name)) {
+    return "video";
+  }
+
+  if (/\.(txt|md|json|csv|log|html|css|js|xml)$/.test(name)) {
+    return "text";
+  }
+
+  return "other";
+}
+
+function getFilePath(file) {
+  return `${currentUser.id}/${file.name}`;
+}
+
+// ========================================
+// AUTH UI
+// ========================================
+
 function showAuth() {
-  authPanel.classList.remove("hidden");
-  storagePanel.classList.add("hidden");
+  $("authPanel").classList.remove("hidden");
+  $("storagePanel").classList.add("hidden");
 
   $("userEmail").textContent = "Not signed in";
   $("accountStatus").textContent = "Connect your account";
   $("avatar").textContent = "?";
-
   $("signOutBtn").classList.add("hidden");
 }
 
 function showStorage() {
-  authPanel.classList.add("hidden");
-  storagePanel.classList.remove("hidden");
+  $("authPanel").classList.add("hidden");
+  $("storagePanel").classList.remove("hidden");
 
   $("userEmail").textContent = currentUser.email;
-  $("accountStatus").textContent = "Connected";
+  $("accountStatus").textContent =
+    isUnlimited() ? "Unlimited account" : "10 TB account";
+
   $("avatar").textContent =
     currentUser.email.charAt(0).toUpperCase();
 
@@ -83,74 +179,57 @@ function showStorage() {
 function setAuthMode(mode) {
   authMode = mode;
 
-  loginTab.classList.toggle("selected", mode === "login");
-  signupTab.classList.toggle("selected", mode === "signup");
+  $("loginTab").classList.toggle("selected", mode === "login");
+  $("signupTab").classList.toggle("selected", mode === "signup");
 
-  authSubmit.innerHTML =
-    mode === "login"
-      ? 'Sign in <span>→</span>'
-      : 'Create account <span>→</span>';
+  $("authSubmit").textContent =
+    mode === "login" ? "Sign in →" : "Create account →";
 
-  authMessage.textContent =
+  $("authMessage").textContent =
     mode === "login"
       ? "Use your email and password to continue."
       : "Create your private cloud account.";
 }
 
+$("loginTab").addEventListener("click", () => setAuthMode("login"));
+$("signupTab").addEventListener("click", () => setAuthMode("signup"));
+
 // ========================================
 // SIGN IN / SIGN UP
 // ========================================
 
-loginTab.addEventListener("click", () => {
-  setAuthMode("login");
-});
-
-signupTab.addEventListener("click", () => {
-  setAuthMode("signup");
-});
-
-authForm.addEventListener("submit", async event => {
+$("authForm").addEventListener("submit", async event => {
   event.preventDefault();
 
-  const email = emailInput.value.trim();
-  const password = passwordInput.value;
+  const email = $("emailInput").value.trim();
+  const password = $("passwordInput").value;
 
-  if (!email || !password) {
-    notify("Enter your email and password.");
-    return;
-  }
-
-  authSubmit.disabled = true;
-  authSubmit.textContent = "Please wait...";
+  const button = $("authSubmit");
+  button.disabled = true;
+  button.textContent = "Please wait...";
 
   try {
     if (authMode === "login") {
-
-      const { data, error } =
-        await client.auth.signInWithPassword({
-          email,
-          password
-        });
+      const { data, error } = await client.auth.signInWithPassword({
+        email,
+        password
+      });
 
       if (error) throw error;
 
       currentUser = data.user;
-
       showStorage();
       await loadFiles();
-
-      notify("Welcome back to Forever Cloud! ☁️");
+      notify("Welcome back to Forever Cloud!");
 
     } else {
-
-      const { data, error } =
-        await client.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: REDIRECT_URL
-          }
-        });
+      const { data, error } = await client.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: REDIRECT_URL
+        }
+      });
 
       if (error) throw error;
 
@@ -158,27 +237,19 @@ authForm.addEventListener("submit", async event => {
         currentUser = data.user;
         showStorage();
         await loadFiles();
-
-        notify("Account created successfully!");
+        notify("Account created!");
       } else {
-        authMessage.textContent =
-          "Account created! Check your email to confirm your account.";
-
         notify("Check your email to confirm your account.");
+        $("authMessage").textContent =
+          "Account created. Please confirm your email.";
       }
     }
-
   } catch (error) {
     notify(error.message);
-    authMessage.textContent = error.message;
-
+    $("authMessage").textContent = error.message;
   } finally {
-    authSubmit.disabled = false;
-
-    authSubmit.innerHTML =
-      authMode === "login"
-        ? 'Sign in <span>→</span>'
-        : 'Create account <span>→</span>';
+    button.disabled = false;
+    setAuthMode(authMode);
   }
 });
 
@@ -196,10 +267,46 @@ $("signOutBtn").addEventListener("click", async () => {
 
   currentUser = null;
   allFiles = [];
-
   showAuth();
-  notify("Signed out successfully.");
+  notify("Signed out!");
 });
+
+// ========================================
+// STORAGE QUOTA
+// ========================================
+
+function updateQuota() {
+  const used = allFiles.reduce(
+    (sum, file) => sum + getFileSize(file), 0
+  );
+
+  $("storageUsed").textContent = formatSize(used);
+
+  const hint = $("storageHint");
+
+  if (isUnlimited()) {
+    hint.textContent =
+      "Unlimited account quota. Actual provider limits still apply.";
+  } else {
+    const remaining = Math.max(0, STORAGE_LIMIT - used);
+    const percent = Math.min(100, used / STORAGE_LIMIT * 100);
+
+    hint.textContent =
+      `${formatSize(remaining)} remaining of 10 TB`;
+
+    let bar = $("fcQuotaBar");
+
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "fcQuotaBar";
+      bar.className = "fc-quota";
+      $("storagePanel").querySelector(".storage-summary")
+        .appendChild(bar);
+    }
+
+    bar.innerHTML = `<div style="width:${percent}%"></div>`;
+  }
+}
 
 // ========================================
 // FILE UPLOAD
@@ -208,22 +315,30 @@ $("signOutBtn").addEventListener("click", async () => {
 async function uploadFile(file) {
   if (!currentUser || !file) return;
 
-  const safeName = file.name.replaceAll("/", "_");
+  const used = allFiles.reduce(
+    (sum, item) => sum + getFileSize(item), 0
+  );
 
-  const filePath =
-    `${currentUser.id}/${Date.now()}_${safeName}`;
+  if (!isUnlimited() && used + file.size > STORAGE_LIMIT) {
+    notify("Storage limit reached! Your account has 10 TB.");
+    return;
+  }
+
+  const path =
+    `${currentUser.id}/${Date.now()}_${file.name.replaceAll("/", "_")}`;
 
   try {
     notify("Uploading " + file.name + "...");
 
     const { error } = await client.storage
       .from("user-files")
-      .upload(filePath, file);
+      .upload(path, file, {
+        contentType: file.type || "application/octet-stream"
+      });
 
     if (error) throw error;
 
-    notify("File uploaded successfully! ☁️");
-
+    notify("Upload successful!");
     await loadFiles();
 
   } catch (error) {
@@ -231,28 +346,16 @@ async function uploadFile(file) {
   }
 }
 
-fileInput.addEventListener("change", async event => {
-  const files = Array.from(event.target.files);
+$("browseBtn").addEventListener("click", () => $("fileInput").click());
+$("uploadTopBtn").addEventListener("click", () => $("fileInput").click());
+$("emptyUploadBtn").addEventListener("click", () => $("fileInput").click());
 
-  for (const file of files) {
+$("fileInput").addEventListener("change", async event => {
+  for (const file of Array.from(event.target.files)) {
     await uploadFile(file);
   }
 
-  fileInput.value = "";
-});
-
-// UPLOAD BUTTONS
-
-$("browseBtn").addEventListener("click", () => {
-  fileInput.click();
-});
-
-$("uploadTopBtn").addEventListener("click", () => {
-  fileInput.click();
-});
-
-$("emptyUploadBtn").addEventListener("click", () => {
-  fileInput.click();
+  event.target.value = "";
 });
 
 // ========================================
@@ -263,21 +366,12 @@ const dropZone = $("dropZone");
 
 dropZone.addEventListener("dragover", event => {
   event.preventDefault();
-  dropZone.classList.add("dragging");
-});
-
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("dragging");
 });
 
 dropZone.addEventListener("drop", async event => {
   event.preventDefault();
 
-  dropZone.classList.remove("dragging");
-
-  const files = Array.from(event.dataTransfer.files);
-
-  for (const file of files) {
+  for (const file of Array.from(event.dataTransfer.files)) {
     await uploadFile(file);
   }
 });
@@ -307,8 +401,7 @@ async function loadFiles() {
     displayFiles();
 
   } catch (error) {
-    console.error(error);
-    notify("Could not load files: " + error.message);
+    notify("Loading failed: " + error.message);
   }
 }
 
@@ -316,128 +409,105 @@ async function loadFiles() {
 // DISPLAY FILES
 // ========================================
 
-function formatSize(bytes) {
-  if (!bytes) return "0 B";
-
-  const units = ["B", "KB", "MB", "GB"];
-  const index = Math.floor(Math.log(bytes) / Math.log(1024));
-
-  return (
-    (bytes / Math.pow(1024, index)).toFixed(2) +
-    " " +
-    units[index]
-  );
-}
-
 function displayFiles() {
-  fileGrid.innerHTML = "";
+  const grid = $("fileGrid");
+  grid.innerHTML = "";
 
-  const query = searchInput.value.toLowerCase();
+  const query = $("searchInput").value.toLowerCase();
 
   let files = allFiles.filter(file =>
     file.name.toLowerCase().includes(query)
   );
 
-  if (sortSelect.value === "name") {
+  const sort = $("sortSelect").value;
+
+  if (sort === "name") {
     files.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  if (sortSelect.value === "largest") {
+  } else if (sort === "largest") {
+    files.sort((a, b) => getFileSize(b) - getFileSize(a));
+  } else {
     files.sort((a, b) =>
-      (b.metadata?.size || 0) - (a.metadata?.size || 0)
+      new Date(b.created_at || 0) - new Date(a.created_at || 0)
     );
+
+    if (sort === "oldest") files.reverse();
   }
 
-  if (sortSelect.value === "oldest") {
-    files.sort((a, b) =>
-      new Date(a.created_at || 0) -
-      new Date(b.created_at || 0)
-    );
-  }
-
-  if (sortSelect.value === "newest") {
-    files.sort((a, b) =>
-      new Date(b.created_at || 0) -
-      new Date(a.created_at || 0)
-    );
-  }
-
-  const totalSize = allFiles.reduce(
-    (sum, file) => sum + (file.metadata?.size || 0),
-    0
-  );
-
-  $("fileCount").textContent =
-    allFiles.length + (allFiles.length === 1 ? " file" : " files");
-
+  $("fileCount").textContent = `${allFiles.length} files`;
   $("visibleCount").textContent = files.length;
-  $("storageUsed").textContent = formatSize(totalSize);
 
   $("emptyState").classList.toggle(
-    "hidden",
-    allFiles.length > 0
+    "hidden", allFiles.length > 0
   );
 
-  if (!files.length) {
-    if (allFiles.length > 0) {
-      const message = document.createElement("p");
-      message.textContent = "No matching files found.";
-      fileGrid.appendChild(message);
-    }
-    return;
-  }
+  updateQuota();
 
-  files.forEach(file => {
-    const path = `${currentUser.id}/${file.name}`;
+  for (const file of files) {
+    const type = getFileType(file);
 
     const item = document.createElement("div");
     item.className = "file-item";
 
     const name = document.createElement("strong");
-    name.textContent = file.name;
+    name.textContent =
+      (type === "image" ? "🖼️ " :
+       type === "video" ? "🎬 " :
+       type === "text" ? "📝 " : "📄 ") + file.name;
 
     const size = document.createElement("small");
-    size.textContent = formatSize(file.metadata?.size || 0);
+    size.textContent = formatSize(getFileSize(file));
+
+    const open = document.createElement("button");
+    open.textContent =
+      type === "text" ? "Edit" :
+      type === "image" || type === "video" ? "View" : "Open";
+
+    open.addEventListener("click", () => openFile(file));
 
     const download = document.createElement("button");
     download.textContent = "Download";
-    download.addEventListener("click", () => downloadFile(path));
+    download.addEventListener("click", () => downloadFile(file));
 
     const remove = document.createElement("button");
     remove.textContent = "Delete";
-    remove.addEventListener("click", () => deleteFile(path));
+    remove.addEventListener("click", () => deleteFile(file));
 
-    item.append(name, size, download, remove);
-
-    fileGrid.appendChild(item);
-  });
+    item.append(name, size, open, download, remove);
+    grid.appendChild(item);
+  }
 }
 
+$("searchInput").addEventListener("input", displayFiles);
+$("sortSelect").addEventListener("change", displayFiles);
+
 // ========================================
-// DOWNLOAD FILE
+// FILE DOWNLOAD
 // ========================================
 
-async function downloadFile(path) {
+async function getBlob(file) {
+  const { data, error } = await client.storage
+    .from("user-files")
+    .download(getFilePath(file));
+
+  if (error) throw error;
+
+  return data;
+}
+
+async function downloadFile(file) {
   try {
-    const { data, error } = await client.storage
-      .from("user-files")
-      .download(path);
-
-    if (error) throw error;
-
-    const url = URL.createObjectURL(data);
+    const blob = await getBlob(file);
+    const url = URL.createObjectURL(blob);
 
     const link = document.createElement("a");
     link.href = url;
-    link.download = path.split("/").pop();
+    link.download = file.name;
 
     document.body.appendChild(link);
     link.click();
     link.remove();
 
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-    notify("Download started!");
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
 
   } catch (error) {
     notify("Download failed: " + error.message);
@@ -445,23 +515,162 @@ async function downloadFile(path) {
 }
 
 // ========================================
+// MODAL
+// ========================================
+
+function closeModal() {
+  const modal = $("fcModal");
+
+  if (modal) modal.remove();
+
+  if (previewUrl) {
+    URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+  }
+}
+
+function createModal(title) {
+  closeModal();
+
+  const modal = document.createElement("div");
+  modal.id = "fcModal";
+  modal.className = "fc-modal";
+
+  const windowBox = document.createElement("div");
+  windowBox.className = "fc-window";
+
+  const heading = document.createElement("h2");
+  heading.textContent = title;
+
+  const close = document.createElement("button");
+  close.className = "fc-secondary";
+  close.textContent = "✕ Close";
+  close.addEventListener("click", closeModal);
+
+  windowBox.append(heading, close);
+
+  modal.appendChild(windowBox);
+  document.body.appendChild(modal);
+
+  modal.addEventListener("click", event => {
+    if (event.target === modal) closeModal();
+  });
+
+  return windowBox;
+}
+
+// ========================================
+// OPEN / VIEW / EDIT FILES
+// ========================================
+
+async function openFile(file) {
+  const type = getFileType(file);
+
+  if (type === "other") {
+    await downloadFile(file);
+    return;
+  }
+
+  const box = createModal(file.name);
+
+  const loading = document.createElement("p");
+  loading.textContent = "Loading file...";
+  box.appendChild(loading);
+
+  try {
+    const blob = await getBlob(file);
+
+    loading.remove();
+
+    previewUrl = URL.createObjectURL(blob);
+
+    // IMAGE VIEWER
+    if (type === "image") {
+      const image = document.createElement("img");
+      image.src = previewUrl;
+      image.alt = file.name;
+      box.appendChild(image);
+    }
+
+    // VIDEO PLAYER
+    if (type === "video") {
+      const video = document.createElement("video");
+      video.src = previewUrl;
+      video.controls = true;
+      video.playsInline = true;
+      box.appendChild(video);
+    }
+
+    // TEXT EDITOR
+    if (type === "text") {
+      const editor = document.createElement("textarea");
+      editor.className = "fc-editor";
+      editor.spellcheck = false;
+      editor.value = await blob.text();
+
+      box.appendChild(editor);
+
+      const actions = document.createElement("div");
+      actions.className = "fc-actions";
+
+      const save = document.createElement("button");
+      save.className = "fc-primary";
+      save.textContent = "Save changes";
+
+      save.addEventListener("click", async () => {
+        save.disabled = true;
+        save.textContent = "Saving...";
+
+        try {
+          const updatedBlob = new Blob(
+            [editor.value],
+            { type: "text/plain;charset=utf-8" }
+          );
+
+          const { error } = await client.storage
+            .from("user-files")
+            .upload(getFilePath(file), updatedBlob, {
+              upsert: true,
+              contentType: "text/plain"
+            });
+
+          if (error) throw error;
+
+          notify("Text file saved!");
+          await loadFiles();
+
+        } catch (error) {
+          notify("Save failed: " + error.message);
+        } finally {
+          save.disabled = false;
+          save.textContent = "Save changes";
+        }
+      });
+
+      actions.appendChild(save);
+      box.appendChild(actions);
+    }
+
+  } catch (error) {
+    loading.textContent = "Could not open file: " + error.message;
+  }
+}
+
+// ========================================
 // DELETE FILE
 // ========================================
 
-async function deleteFile(path) {
-  if (!confirm("Are you sure you want to delete this file?")) {
-    return;
-  }
+async function deleteFile(file) {
+  if (!confirm(`Delete ${file.name}?`)) return;
 
   try {
     const { error } = await client.storage
       .from("user-files")
-      .remove([path]);
+      .remove([getFilePath(file)]);
 
     if (error) throw error;
 
-    notify("File deleted successfully!");
-
+    notify("File deleted!");
     await loadFiles();
 
   } catch (error) {
@@ -470,11 +679,8 @@ async function deleteFile(path) {
 }
 
 // ========================================
-// SEARCH AND SORT
+// REFRESH
 // ========================================
-
-searchInput.addEventListener("input", displayFiles);
-sortSelect.addEventListener("change", displayFiles);
 
 $("refreshBtn").addEventListener("click", async () => {
   await loadFiles();
@@ -482,33 +688,14 @@ $("refreshBtn").addEventListener("click", async () => {
 });
 
 // ========================================
-// AUTH STATE
-// ========================================
-
-client.auth.onAuthStateChange((event, session) => {
-  if (event === "SIGNED_IN" && session) {
-    currentUser = session.user;
-    showStorage();
-  }
-
-  if (event === "SIGNED_OUT") {
-    currentUser = null;
-    allFiles = [];
-    showAuth();
-  }
-});
-
-// ========================================
-// INITIALIZE APP
+// INITIALIZE
 // ========================================
 
 async function initializeApp() {
   try {
     if (!window.supabase) {
-      throw new Error("Supabase library failed to load.");
+      throw new Error("Supabase library did not load.");
     }
-
-    setupNotice.classList.add("hidden");
 
     const { data, error } = await client.auth.getSession();
 
@@ -516,24 +703,29 @@ async function initializeApp() {
 
     if (data.session) {
       currentUser = data.session.user;
-
       showStorage();
       await loadFiles();
-
     } else {
       showAuth();
     }
 
+    $("setupNotice").classList.add("hidden");
+
   } catch (error) {
     console.error(error);
-
-    setupNotice.classList.remove("hidden");
-    notify(error.message);
-
+    $("setupNotice").classList.remove("hidden");
     showAuth();
+    notify(error.message);
   }
 }
 
+client.auth.onAuthStateChange((event, session) => {
+  if (event === "SIGNED_OUT") {
+    currentUser = null;
+    allFiles = [];
+    showAuth();
+  }
+});
+
 setAuthMode("login");
 initializeApp();
-                       
