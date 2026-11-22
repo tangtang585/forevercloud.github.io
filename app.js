@@ -1,713 +1,263 @@
 
-// ========================================
-// FOREVER CLOUD - APP.JS
-// Complete storage application + URL downloader
-// ========================================
+const URL_DB="https://kapzuwhpjbfeofetuqbo.supabase.co";
+const KEY="sb_publishable_jC018UdtJFVK7sG_YZ39oA_nH0ZhwID";
+const OWNER="t8505243@gmail.com",LIMIT=10e12;
+const db=window.supabase.createClient(URL_DB,KEY);
+const $=id=>document.getElementById(id);
+let user=null,files=[],mode="login",preview=null;
 
-const SUPABASE_URL = "https://kapzuwhpjbfeofetuqbo.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_jC018UdtJFVK7sG_YZ39oA_nH0ZhwID";
-
-const REDIRECT_URL = "https://mycloudstoragegithubio.vercel.app/";
-
-const OWNER_EMAIL = "t8505243@gmail.com";
-const STORAGE_LIMIT = 10000000000000; // 10 TB
-
-const client = window.supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY
-);
-
-const $ = id => document.getElementById(id);
-
-let currentUser = null;
-let allFiles = [];
-let authMode = "login";
-let previewUrl = null;
-
-// ========================================
-// EXTRA STYLES
-// ========================================
-
-const extraStyles = document.createElement("style");
-
-extraStyles.textContent = `
-.fc-modal {
-  position:fixed; inset:0; z-index:99999;
-  background:rgba(0,0,0,.88);
-  display:flex; align-items:center; justify-content:center;
-  padding:14px;
-}
-.fc-window {
-  width:min(900px,100%); max-height:92vh;
-  overflow:auto; background:#111a30;
-  color:white; border:1px solid #34415d;
-  border-radius:16px; padding:18px;
-}
-.fc-window img {
-  max-width:100%; max-height:70vh;
-  object-fit:contain; display:block; margin:auto;
-}
-.fc-window video {
-  width:100%; max-height:70vh; background:black;
-}
-.fc-editor {
-  width:100%; min-height:55vh;
-  resize:vertical; box-sizing:border-box;
-  background:#080f20; color:white;
-  border:1px solid #46516d; border-radius:8px;
-  padding:14px; font:14px monospace;
-}
-.fc-actions {
-  display:flex; gap:10px; flex-wrap:wrap;
-  margin-top:14px;
-}
-.fc-actions button {
-  padding:10px 16px; border:0;
-  border-radius:8px; cursor:pointer;
-}
-.fc-primary {background:#7164f5;color:white}
-.fc-secondary {background:#34415d;color:white}
-.file-item {
-  padding:14px; margin-bottom:10px;
-  border:1px solid #34415d; border-radius:12px;
-  display:flex; flex-wrap:wrap;
-  align-items:center; gap:10px;
-}
-.file-item strong {overflow-wrap:anywhere; flex:1}
-.file-item button {
-  padding:8px 12px; border-radius:7px;
-  cursor:pointer;
-}
-.fc-quota {
-  margin-top:8px; height:8px;
-  background:#29334b; border-radius:10px;
-  overflow:hidden;
-}
-.fc-quota div {
-  height:100%; background:#7164f5;
-}
+const css=document.createElement("style");
+css.textContent=`
+.fc-modal{position:fixed;inset:0;z-index:99999;background:#000d;display:flex;align-items:center;justify-content:center;padding:14px}
+.fc-window{width:min(900px,100%);max-height:92vh;overflow:auto;background:#111a30;color:white;border:1px solid #34415d;border-radius:16px;padding:18px}
+.fc-window img{max-width:100%;max-height:70vh;display:block;margin:auto;object-fit:contain}
+.fc-window video{width:100%;max-height:70vh;background:black}
+.fc-editor{width:100%;min-height:55vh;box-sizing:border-box;background:#080f20;color:white;padding:14px}
+.fc-download-input{width:100%;box-sizing:border-box;padding:13px;margin:15px 0;background:#080f20;color:white}
+.fc-actions,.file-item{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.fc-quota{height:8px;background:#29334b;border-radius:10px;overflow:hidden}
+.fc-quota div{height:100%;background:#7164f5}
+.file-item{padding:14px;border:1px solid #34415d;border-radius:12px;align-items:center}
+.file-item strong{overflow-wrap:anywhere;flex:1}
 `;
+document.head.appendChild(css);
 
-document.head.appendChild(extraStyles);
+function notify(m){
+ const t=$("toast");if(!t)return;
+ t.textContent=m;t.classList.add("show");
+ setTimeout(()=>t.classList.remove("show"),3500);
+}
+const unlimited=()=>user?.email?.toLowerCase()===OWNER;
+const size=n=>{if(!n)return"0 B";let u=["B","KB","MB","GB","TB"],i=Math.min(Math.floor(Math.log(n)/Math.log(1024)),4);return(n/1024**i).toFixed(2)+" "+u[i]};
+const fsize=f=>Number(f.metadata?.size||0);
+function type(f){
+ let n=f.name.toLowerCase(),m=f.metadata?.mimetype||"";
+ if(m.startsWith("image/")||/\.(png|jpg|jpeg|gif|webp|svg|bmp|avif)$/.test(n))return"image";
+ if(m.startsWith("video/")||/\.(mp4|webm|mov|m4v|ogv)$/.test(n))return"video";
+ if(/\.(txt|md|json|csv|log|html|css|js|xml)$/.test(n))return"text";
+ return"other";
+}
+const path=f=>`${user.id}/${f.name}`;
 
-// ========================================
-// HELPERS
-// ========================================
+function authUI(){
+ $("authPanel").classList.remove("hidden");
+ $("storagePanel").classList.add("hidden");
+ $("userEmail").textContent="Not signed in";
+ $("accountStatus").textContent="Connect your account";
+ $("avatar").textContent="?";
+ $("signOutBtn").classList.add("hidden");
+}
+function storageUI(){
+ $("authPanel").classList.add("hidden");
+ $("storagePanel").classList.remove("hidden");
+ $("userEmail").textContent=user.email;
+ $("accountStatus").textContent=unlimited()?"Unlimited account":"10 TB account";
+ $("avatar").textContent=user.email[0].toUpperCase();
+ $("signOutBtn").classList.remove("hidden");
+}
+function setMode(m){
+ mode=m;
+ $("loginTab").classList.toggle("selected",m==="login");
+ $("signupTab").classList.toggle("selected",m==="signup");
+ $("authSubmit").textContent=m==="login"?"Sign in →":"Create account →";
+ $("authMessage").textContent=m==="login"?"Use your email and password to continue.":"Create your private cloud account.";
+}
+$("loginTab").onclick=()=>setMode("login");
+$("signupTab").onclick=()=>setMode("signup");
 
-function notify(message) {
-  const toast = $("toast");
-  toast.textContent = message;
-  toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 3500);
+$("authForm").onsubmit=async e=>{
+ e.preventDefault();
+ let email=$("emailInput").value.trim(),password=$("passwordInput").value,b=$("authSubmit");
+ b.disabled=true;b.textContent="Please wait...";
+ try{
+  let r=mode==="login"
+   ?await db.auth.signInWithPassword({email,password})
+   :await db.auth.signUp({email,password,options:{emailRedirectTo:"https://mycloudstoragegithubio.vercel.app/"}});
+  if(r.error)throw r.error;
+  if(r.data.session){
+   user=r.data.user;storageUI();await loadFiles();notify("Welcome to Forever Cloud!");
+  }else notify("Check your email to confirm your account.");
+ }catch(e){notify(e.message);$("authMessage").textContent=e.message}
+ finally{b.disabled=false;setMode(mode)}
+};
+
+$("signOutBtn").onclick=async()=>{
+ let{error}=await db.auth.signOut();
+ if(error)return notify(error.message);
+ user=null;files=[];authUI();notify("Signed out!");
+};
+
+function quota(){
+ let used=files.reduce((s,f)=>s+fsize(f),0);
+ $("storageUsed").textContent=size(used);
+ $("storageHint").textContent=unlimited()?"Unlimited account quota. Provider limits still apply.":`${size(Math.max(0,LIMIT-used))} remaining of 10 TB`;
+ if(unlimited())return;
+ let bar=$("fcQuotaBar");
+ if(!bar){
+  bar=document.createElement("div");bar.id="fcQuotaBar";bar.className="fc-quota";
+  $("storagePanel").querySelector(".storage-summary").append(bar);
+ }
+ bar.innerHTML=`<div style="width:${Math.min(100,used/LIMIT*100)}%"></div>`;
 }
 
-function isUnlimited() {
-  return currentUser?.email?.toLowerCase() === OWNER_EMAIL;
+async function uploadFile(file){
+ if(!user||!file)return false;
+ let used=files.reduce((s,f)=>s+fsize(f),0);
+ if(!unlimited()&&used+file.size>LIMIT){notify("10 TB storage limit reached!");return false}
+ let name=file.name.replace(/[\\/]/g,"_"),p=`${user.id}/${Date.now()}_${name}`;
+ try{
+  notify("Uploading "+file.name+"...");
+  let{error}=await db.storage.from("user-files").upload(p,file,{contentType:file.type||"application/octet-stream"});
+  if(error)throw error;
+  await loadFiles();notify("Upload successful!");return true;
+ }catch(e){notify("Upload failed: "+e.message);return false}
 }
 
-function formatSize(bytes) {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 4);
-  return (bytes / Math.pow(1024, index)).toFixed(2) + " " + units[index];
+["browseBtn","uploadTopBtn","emptyUploadBtn"].forEach(id=>{
+ $(id).onclick=()=>$("fileInput").click();
+});
+$("fileInput").onchange=async e=>{
+ for(let f of e.target.files)await uploadFile(f);
+ e.target.value="";
+};
+
+function closeModal(){
+ $("fcModal")?.remove();
+ if(preview){URL.revokeObjectURL(preview);preview=null}
+}
+function modal(title){
+ closeModal();
+ let m=document.createElement("div");m.id="fcModal";m.className="fc-modal";
+ let w=document.createElement("div");w.className="fc-window";
+ let h=document.createElement("h2");h.textContent=title;
+ let c=document.createElement("button");c.textContent="✕ Close";c.onclick=closeModal;
+ w.append(h,c);m.append(w);document.body.append(m);
+ m.onclick=e=>{if(e.target===m)closeModal()};
+ return w;
 }
 
-function getFileSize(file) {
-  return Number(file.metadata?.size || 0);
+function downloadPopup(){
+ if(!user)return notify("Please sign in first!");
+ let box=modal("Download from Link");
+ let p=document.createElement("p");p.textContent="Paste a direct file download URL.";
+ let input=document.createElement("input");input.className="fc-download-input";input.placeholder="https://example.com/file.zip";input.type="url";
+ let status=document.createElement("p");status.textContent="Ready.";
+ let actions=document.createElement("div");actions.className="fc-actions";
+ let b=document.createElement("button");b.textContent="↓ Download to my cloud";
+ let cancel=document.createElement("button");cancel.textContent="Cancel";cancel.onclick=closeModal;
+ b.onclick=async()=>{
+  try{
+   let url=new URL(input.value.trim());
+   if(!["http:","https:"].includes(url.protocol))throw Error("Invalid URL");
+   b.disabled=true;b.textContent="Downloading...";status.textContent="Connecting...";
+   let r=await fetch(url.href);
+   if(!r.ok)throw Error("Server error "+r.status);
+   let blob=await r.blob();
+   if(!blob.size)throw Error("Empty file");
+   let name=decodeURIComponent(url.pathname.split("/").pop()||"download");
+   name=name.replace(/[\\/:*?"<>|]/g,"_");
+   let cd=r.headers.get("content-disposition"),match=cd?.match(/filename="?([^";]+)"?/i);
+   if(match)name=match[1].trim();
+   status.textContent="Uploading "+size(blob.size)+"...";
+   if(!await uploadFile(new File([blob],name,{type:blob.type||"application/octet-stream"})))throw Error("Upload failed");
+   status.textContent="Saved successfully!";b.textContent="✓ Complete";setTimeout(closeModal,1300);
+  }catch(e){status.textContent="Failed: "+e.message+" (The source may block browser downloads with CORS.)";b.disabled=false;b.textContent="Try again"}
+ };
+ input.onkeydown=e=>{if(e.key==="Enter")b.click()};
+ actions.append(b,cancel);box.append(p,input,actions,status);
 }
-
-function getFileType(file) {
-  const name = file.name.toLowerCase();
-  const mime = file.metadata?.mimetype || "";
-
-  if (mime.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif)$/.test(name)) return "image";
-  if (mime.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/.test(name)) return "video";
-  if (/\.(txt|md|json|csv|log|html|css|js|xml)$/.test(name)) return "text";
-
-  return "other";
-}
-
-function getFilePath(file) {
-  return `${currentUser.id}/${file.name}`;
-}
-
-// ========================================
-// AUTH UI
-// ========================================
-
-function showAuth() {
-  $("authPanel").classList.remove("hidden");
-  $("storagePanel").classList.add("hidden");
-  $("userEmail").textContent = "Not signed in";
-  $("accountStatus").textContent = "Connect your account";
-  $("avatar").textContent = "?";
-  $("signOutBtn").classList.add("hidden");
-}
-
-function showStorage() {
-  $("authPanel").classList.add("hidden");
-  $("storagePanel").classList.remove("hidden");
-  $("userEmail").textContent = currentUser.email;
-  $("accountStatus").textContent = isUnlimited() ? "Unlimited account" : "10 TB account";
-  $("avatar").textContent = currentUser.email.charAt(0).toUpperCase();
-  $("signOutBtn").classList.remove("hidden");
-}
-
-function setAuthMode(mode) {
-  authMode = mode;
-  $("loginTab").classList.toggle("selected", mode === "login");
-  $("signupTab").classList.toggle("selected", mode === "signup");
-  $("authSubmit").textContent = mode === "login" ? "Sign in →" : "Create account →";
-  $("authMessage").textContent = mode === "login"
-    ? "Use your email and password to continue."
-    : "Create your private cloud account.";
-}
-
-$("loginTab").addEventListener("click", () => setAuthMode("login"));
-$("signupTab").addEventListener("click", () => setAuthMode("signup"));
-
-// ========================================
-// SIGN IN / SIGN UP
-// ========================================
-
-$("authForm").addEventListener("submit", async event => {
-  event.preventDefault();
-
-  const email = $("emailInput").value.trim();
-  const password = $("passwordInput").value;
-  const button = $("authSubmit");
-
-  button.disabled = true;
-  button.textContent = "Please wait...";
-
-  try {
-    if (authMode === "login") {
-      const { data, error } = await client.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-
-      currentUser = data.user;
-      showStorage();
-      await loadFiles();
-      notify("Welcome back to Forever Cloud!");
-    } else {
-      const { data, error } = await client.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: REDIRECT_URL }
-      });
-
-      if (error) throw error;
-
-      if (data.session) {
-        currentUser = data.user;
-        showStorage();
-        await loadFiles();
-        notify("Account created!");
-      } else {
-        notify("Check your email to confirm your account.");
-        $("authMessage").textContent = "Account created. Please confirm your email.";
-      }
-    }
-  } catch (error) {
-    notify(error.message);
-    $("authMessage").textContent = error.message;
-  } finally {
-    button.disabled = false;
-    setAuthMode(authMode);
-  }
+document.addEventListener("click",e=>{
+ if(e.target.closest("#downloadLinkBtn")){e.preventDefault();downloadPopup()}
 });
 
-// ========================================
-// LOGOUT
-// ========================================
-
-$("signOutBtn").addEventListener("click", async () => {
-  const { error } = await client.auth.signOut();
-
-  if (error) {
-    notify(error.message);
-    return;
-  }
-
-  currentUser = null;
-  allFiles = [];
-  showAuth();
-  notify("Signed out!");
+$("dropZone").addEventListener("dragover",e=>e.preventDefault());
+$("dropZone").addEventListener("drop",async e=>{
+ e.preventDefault();for(let f of e.dataTransfer.files)await uploadFile(f);
 });
 
-// ========================================
-// STORAGE QUOTA
-// ========================================
-
-function updateQuota() {
-  const used = allFiles.reduce((sum, file) => sum + getFileSize(file), 0);
-  $("storageUsed").textContent = formatSize(used);
-
-  if (isUnlimited()) {
-    $("storageHint").textContent = "Unlimited account quota. Actual provider limits still apply.";
-    return;
-  }
-
-  const remaining = Math.max(0, STORAGE_LIMIT - used);
-  const percent = Math.min(100, used / STORAGE_LIMIT * 100);
-
-  $("storageHint").textContent = `${formatSize(remaining)} remaining of 10 TB`;
-
-  let bar = $("fcQuotaBar");
-
-  if (!bar) {
-    bar = document.createElement("div");
-    bar.id = "fcQuotaBar";
-    bar.className = "fc-quota";
-    $("storagePanel").querySelector(".storage-summary").appendChild(bar);
-  }
-
-  bar.innerHTML = `<div style="width:${percent}%"></div>`;
+async function loadFiles(){
+ if(!user)return;
+ try{
+  let{data,error}=await db.storage.from("user-files").list(user.id,{limit:100,sortBy:{column:"created_at",order:"desc"}});
+  if(error)throw error;
+  files=(data||[]).filter(f=>f.name);displayFiles();
+ }catch(e){notify("Loading failed: "+e.message)}
 }
 
-// ========================================
-// FILE UPLOAD
-// ========================================
+function displayFiles(){
+ let grid=$("fileGrid");grid.innerHTML="";
+ let q=$("searchInput").value.toLowerCase();
+ let list=files.filter(f=>f.name.toLowerCase().includes(q));
+ let sort=$("sortSelect").value;
+ if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name));
+ else if(sort==="largest")list.sort((a,b)=>fsize(b)-fsize(a));
+ else{list.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));if(sort==="oldest")list.reverse()}
+ $("fileCount").textContent=files.length+" files";
+ $("visibleCount").textContent=list.length;
+ $("emptyState").classList.toggle("hidden",files.length>0);
+ quota();
+ for(let f of list){
+  let t=type(f),item=document.createElement("div");item.className="file-item";
+  let n=document.createElement("strong");n.textContent=(t==="image"?"🖼️ ":t==="video"?"🎬 ":t==="text"?"📝 ":"📄 ")+f.name;
+  let s=document.createElement("small");s.textContent=size(fsize(f));
+  let open=document.createElement("button");open.textContent=t==="text"?"Edit":t==="other"?"Open":"View";open.onclick=()=>openFile(f);
+  let d=document.createElement("button");d.textContent="Download";d.onclick=()=>downloadFile(f);
+  let x=document.createElement("button");x.textContent="Delete";x.onclick=()=>deleteFile(f);
+  item.append(n,s,open,d,x);grid.append(item);
+ }
+}
+$("searchInput").oninput=displayFiles;
+$("sortSelect").onchange=displayFiles;
 
-async function uploadFile(file) {
-  if (!currentUser || !file) return false;
-
-  const used = allFiles.reduce((sum, item) => sum + getFileSize(item), 0);
-
-  if (!isUnlimited() && used + file.size > STORAGE_LIMIT) {
-    notify("Storage limit reached! Your account has 10 TB.");
-    return false;
-  }
-
-  const safeName = file.name.replace(/[\\/]/g, "_");
-  const path = `${currentUser.id}/${Date.now()}_${safeName}`;
-
-  try {
-    notify("Uploading " + file.name + "...");
-
-    const { error } = await client.storage.from("user-files").upload(path, file, {
-      contentType: file.type || "application/octet-stream"
-    });
-
-    if (error) throw error;
-
-    notify("Upload successful!");
-    await loadFiles();
-    return true;
-  } catch (error) {
-    notify("Upload failed: " + error.message);
-    return false;
-  }
+async function getBlob(f){
+ let{data,error}=await db.storage.from("user-files").download(path(f));
+ if(error)throw error;return data;
+}
+async function downloadFile(f){
+ try{
+  let blob=await getBlob(f),url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=f.name;document.body.append(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+ }catch(e){notify("Download failed: "+e.message)}
+}
+async function deleteFile(f){
+ if(!confirm("Delete "+f.name+"?"))return;
+ try{
+  let{error}=await db.storage.from("user-files").remove([path(f)]);
+  if(error)throw error;notify("Deleted!");await loadFiles();
+ }catch(e){notify("Delete failed: "+e.message)}
 }
 
-$("browseBtn").addEventListener("click", () => $("fileInput").click());
-$("uploadTopBtn").addEventListener("click", () => $("fileInput").click());
-$("emptyUploadBtn").addEventListener("click", () => $("fileInput").click());
-
-$("fileInput").addEventListener("change", async event => {
-  for (const file of Array.from(event.target.files)) {
-    await uploadFile(file);
+async function openFile(f){
+ let t=type(f);if(t==="other")return downloadFile(f);
+ let box=modal(f.name),loading=document.createElement("p");loading.textContent="Loading...";
+ box.append(loading);
+ try{
+  let blob=await getBlob(f);loading.remove();preview=URL.createObjectURL(blob);
+  if(t==="image"){let img=document.createElement("img");img.src=preview;box.append(img)}
+  if(t==="video"){let v=document.createElement("video");v.src=preview;v.controls=true;v.playsInline=true;box.append(v)}
+  if(t==="text"){
+   let editor=document.createElement("textarea");editor.className="fc-editor";editor.spellcheck=false;editor.value=await blob.text();box.append(editor);
+   let save=document.createElement("button");save.textContent="Save changes";save.onclick=async()=>{
+    save.disabled=true;
+    try{
+     let{error}=await db.storage.from("user-files").upload(path(f),new Blob([editor.value],{type:"text/plain;charset=utf-8"}),{upsert:true,contentType:"text/plain"});
+     if(error)throw error;notify("Saved!");await loadFiles();
+    }catch(e){notify("Save failed: "+e.message)}
+    save.disabled=false;
+   };box.append(save);
   }
-  event.target.value = "";
-});
-
-// ========================================
-// DOWNLOAD FROM LINK
-// ========================================
-
-async function downloadFromLink() {
-  if (!currentUser) {
-    notify("Please sign in first!");
-    return;
-  }
-
-  const input = prompt("Paste a direct file download URL:");
-
-  if (!input) return;
-
-  let url;
-
-  try {
-    url = new URL(input.trim());
-
-    if (!["http:", "https:"].includes(url.protocol)) {
-      throw new Error("Only HTTP and HTTPS links are supported.");
-    }
-  } catch (error) {
-    notify("Invalid download URL.");
-    return;
-  }
-
-  try {
-    notify("Downloading file from link...");
-
-    const response = await fetch(url.href);
-
-    if (!response.ok) {
-      throw new Error(`Server returned ${response.status}`);
-    }
-
-    const blob = await response.blob();
-
-    if (blob.size === 0) {
-      throw new Error("The downloaded file is empty.");
-    }
-
-    let filename = decodeURIComponent(url.pathname.split("/").pop() || "downloaded-file");
-
-    filename = filename.replace(/[\\/:*?"<>|]/g, "_");
-
-    const contentDisposition = response.headers.get("content-disposition");
-    const match = contentDisposition?.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
-
-    if (match) {
-      try {
-        filename = decodeURIComponent(match[1].replace(/"/g, "").trim());
-      } catch {}
-    }
-
-    const file = new File([blob], filename, {
-      type: blob.type || "application/octet-stream"
-    });
-
-    const success = await uploadFile(file);
-
-    if (success) notify("Downloaded and saved to Forever Cloud! ☁️");
-  } catch (error) {
-    console.error(error);
-    notify("Link download failed: " + error.message + ". The source server may block CORS.");
-  }
+ }catch(e){loading.textContent="Could not open: "+e.message}
 }
 
-const downloadLinkButton = $("downloadLinkBtn");
-
-if (downloadLinkButton) {
-  downloadLinkButton.addEventListener("click", downloadFromLink);
+async function init(){
+ let{data}=await db.auth.getSession();
+ if(data.session){user=data.session.user;storageUI();await loadFiles()}
+ else authUI();
+ db.auth.onAuthStateChange(async(event,session)=>{
+  if(session){user=session.user;storageUI();await loadFiles()}
+  else{user=null;files=[];authUI()}
+ });
 }
-
-// ========================================
-// DRAG AND DROP
-// ========================================
-
-const dropZone = $("dropZone");
-
-dropZone.addEventListener("dragover", event => event.preventDefault());
-
-dropZone.addEventListener("drop", async event => {
-  event.preventDefault();
-
-  for (const file of Array.from(event.dataTransfer.files)) {
-    await uploadFile(file);
-  }
-});
-
-// ========================================
-// LOAD FILES
-// ========================================
-
-async function loadFiles() {
-  if (!currentUser) return;
-
-  try {
-    const { data, error } = await client.storage.from("user-files").list(currentUser.id, {
-      limit: 100,
-      sortBy: { column: "created_at", order: "desc" }
-    });
-
-    if (error) throw error;
-
-    allFiles = (data || []).filter(file => file.name);
-    displayFiles();
-  } catch (error) {
-    notify("Loading failed: " + error.message);
-  }
-}
-
-// ========================================
-// DISPLAY FILES
-// ========================================
-
-function displayFiles() {
-  const grid = $("fileGrid");
-  grid.innerHTML = "";
-
-  const query = $("searchInput").value.toLowerCase();
-
-  let files = allFiles.filter(file => file.name.toLowerCase().includes(query));
-  const sort = $("sortSelect").value;
-
-  if (sort === "name") {
-    files.sort((a, b) => a.name.localeCompare(b.name));
-  } else if (sort === "largest") {
-    files.sort((a, b) => getFileSize(b) - getFileSize(a));
-  } else {
-    files.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    if (sort === "oldest") files.reverse();
-  }
-
-  $("fileCount").textContent = `${allFiles.length} files`;
-  $("visibleCount").textContent = files.length;
-  $("emptyState").classList.toggle("hidden", allFiles.length > 0);
-
-  updateQuota();
-
-  for (const file of files) {
-    const type = getFileType(file);
-    const item = document.createElement("div");
-    item.className = "file-item";
-
-    const name = document.createElement("strong");
-    name.textContent = (type === "image" ? "🖼️ " :
-      type === "video" ? "🎬 " :
-      type === "text" ? "📝 " : "📄 ") + file.name;
-
-    const size = document.createElement("small");
-    size.textContent = formatSize(getFileSize(file));
-
-    const open = document.createElement("button");
-    open.textContent = type === "text" ? "Edit" :
-      type === "image" || type === "video" ? "View" : "Open";
-    open.addEventListener("click", () => openFile(file));
-
-    const download = document.createElement("button");
-    download.textContent = "Download";
-    download.addEventListener("click", () => downloadFile(file));
-
-    const remove = document.createElement("button");
-    remove.textContent = "Delete";
-    remove.addEventListener("click", () => deleteFile(file));
-
-    item.append(name, size, open, download, remove);
-    grid.appendChild(item);
-  }
-}
-
-$("searchInput").addEventListener("input", displayFiles);
-$("sortSelect").addEventListener("change", displayFiles);
-
-// ========================================
-// FILE DOWNLOAD
-// ========================================
-
-async function getBlob(file) {
-  const { data, error } = await client.storage.from("user-files").download(getFilePath(file));
-  if (error) throw error;
-  return data;
-}
-
-async function downloadFile(file) {
-  try {
-    const blob = await getBlob(file);
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  } catch (error) {
-    notify("Download failed: " + error.message);
-  }
-}
-
-// ========================================
-// MODAL
-// ========================================
-
-function closeModal() {
-  const modal = $("fcModal");
-  if (modal) modal.remove();
-
-  if (previewUrl) {
-    URL.revokeObjectURL(previewUrl);
-    previewUrl = null;
-  }
-}
-
-function createModal(title) {
-  closeModal();
-
-  const modal = document.createElement("div");
-  modal.id = "fcModal";
-  modal.className = "fc-modal";
-
-  const windowBox = document.createElement("div");
-  windowBox.className = "fc-window";
-
-  const heading = document.createElement("h2");
-  heading.textContent = title;
-
-  const close = document.createElement("button");
-  close.className = "fc-secondary";
-  close.textContent = "✕ Close";
-  close.addEventListener("click", closeModal);
-
-  windowBox.append(heading, close);
-  modal.appendChild(windowBox);
-  document.body.appendChild(modal);
-
-  modal.addEventListener("click", event => {
-    if (event.target === modal) closeModal();
-  });
-
-  return windowBox;
-}
-
-// ========================================
-// OPEN / VIEW / EDIT FILES
-// ========================================
-
-async function openFile(file) {
-  const type = getFileType(file);
-
-  if (type === "other") {
-    await downloadFile(file);
-    return;
-  }
-
-  const box = createModal(file.name);
-
-  const loading = document.createElement("p");
-  loading.textContent = "Loading file...";
-  box.appendChild(loading);
-
-  try {
-    const blob = await getBlob(file);
-    loading.remove();
-
-    previewUrl = URL.createObjectURL(blob);
-
-    if (type === "image") {
-      const image = document.createElement("img");
-      image.src = previewUrl;
-      image.alt = file.name;
-      box.appendChild(image);
-    }
-
-    if (type === "video") {
-      const video = document.createElement("video");
-      video.src = previewUrl;
-      video.controls = true;
-      video.playsInline = true;
-      box.appendChild(video);
-    }
-
-    if (type === "text") {
-      const editor = document.createElement("textarea");
-      editor.className = "fc-editor";
-      editor.spellcheck = false;
-      editor.value = await blob.text();
-      box.appendChild(editor);
-
-      const actions = document.createElement("div");
-      actions.className = "fc-actions";
-
-      const save = document.createElement("button");
-      save.className = "fc-primary";
-      save.textContent = "Save changes";
-
-      save.addEventListener("click", async () => {
-        save.disabled = true;
-        save.textContent = "Saving...";
-
-        try {
-          const updatedBlob = new Blob([editor.value], {
-            type: "text/plain;charset=utf-8"
-          });
-
-          const { error } = await client.storage.from("user-files").upload(
-            getFilePath(file),
-            updatedBlob,
-            { upsert: true, contentType: "text/plain" }
-          );
-
-          if (error) throw error;
-
-          notify("Text file saved!");
-          await loadFiles();
-        } catch (error) {
-          notify("Save failed: " + error.message);
-        } finally {
-          save.disabled = false;
-          save.textContent = "Save changes";
-        }
-      });
-
-      actions.appendChild(save);
-      box.appendChild(actions);
-    }
-  } catch (error) {
-    loading.textContent = "Could not open file: " + error.message;
-  }
-}
-
-// ========================================
-// DELETE FILE
-// ========================================
-
-async function deleteFile(file) {
-  if (!confirm(`Delete ${file.name}?`)) return;
-
-  try {
-    const { error } = await client.storage.from("user-files").remove([getFilePath(file)]);
-    if (error) throw error;
-
-    notify("File deleted!");
-    await loadFiles();
-  } catch (error) {
-    notify("Delete failed: " + error.message);
-  }
-}
-
-// ========================================
-// REFRESH
-// ========================================
-
-$("refreshBtn").addEventListener("click", async () => {
-  await loadFiles();
-  notify("Files refreshed!");
-});
-
-// ========================================
-// INITIALIZE
-// ========================================
-
-async function initializeApp() {
-  try {
-    if (!window.supabase) {
-      throw new Error("Supabase library did not load.");
-    }
-
-    const { data, error } = await client.auth.getSession();
-    if (error) throw error;
-
-    if (data.session) {
-      currentUser = data.session.user;
-      showStorage();
-      await loadFiles();
-    } else {
-      showAuth();
-    }
-
-    $("setupNotice").classList.add("hidden");
-  } catch (error) {
-    console.error(error);
-    $("setupNotice").classList.remove("hidden");
-    showAuth();
-    notify(error.message);
-  }
-}
-
-client.auth.onAuthStateChange((event, session) => {
-  if (event === "SIGNED_OUT") {
-    currentUser = null;
-    allFiles = [];
-    showAuth();
-  }
-});
-
-setAuthMode("login");
-initializeApp();
+init();
+  
