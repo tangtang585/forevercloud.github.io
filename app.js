@@ -5,7 +5,7 @@
 // ========================================
 
 const SUPABASE_URL = "https://kapzuwhpjbfeofetuqbo.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_EXISTING_PUBLISHABLE_KEY";
+const SUPABASE_ANON_KEY = "sb_publishable_jC018UdtJFVK7sG_YZ39oA_nH0ZhwID";
 
 const REDIRECT_URL = "https://mycloudstoragegithubio.vercel.app/";
 
