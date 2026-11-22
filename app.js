@@ -1,7 +1,7 @@
 
 // ========================================
 // FOREVER CLOUD - APP.JS
-// Complete storage application
+// Complete storage application + URL downloader
 // ========================================
 
 const SUPABASE_URL = "https://kapzuwhpjbfeofetuqbo.supabase.co";
@@ -25,7 +25,7 @@ let authMode = "login";
 let previewUrl = null;
 
 // ========================================
-// STYLES FOR EDITOR AND VIEWER
+// EXTRA STYLES
 // ========================================
 
 const extraStyles = document.createElement("style");
@@ -98,7 +98,6 @@ function notify(message) {
   const toast = $("toast");
   toast.textContent = message;
   toast.classList.add("show");
-
   setTimeout(() => toast.classList.remove("show"), 3500);
 }
 
@@ -108,15 +107,9 @@ function isUnlimited() {
 
 function formatSize(bytes) {
   if (!bytes) return "0 B";
-
   const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    4
-  );
-
-  return (bytes / Math.pow(1024, index)).toFixed(2)
-    + " " + units[index];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 4);
+  return (bytes / Math.pow(1024, index)).toFixed(2) + " " + units[index];
 }
 
 function getFileSize(file) {
@@ -127,19 +120,9 @@ function getFileType(file) {
   const name = file.name.toLowerCase();
   const mime = file.metadata?.mimetype || "";
 
-  if (mime.startsWith("image/") ||
-      /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif)$/.test(name)) {
-    return "image";
-  }
-
-  if (mime.startsWith("video/") ||
-      /\.(mp4|webm|mov|m4v|ogv)$/.test(name)) {
-    return "video";
-  }
-
-  if (/\.(txt|md|json|csv|log|html|css|js|xml)$/.test(name)) {
-    return "text";
-  }
+  if (mime.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp|svg|bmp|avif)$/.test(name)) return "image";
+  if (mime.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/.test(name)) return "video";
+  if (/\.(txt|md|json|csv|log|html|css|js|xml)$/.test(name)) return "text";
 
   return "other";
 }
@@ -155,7 +138,6 @@ function getFilePath(file) {
 function showAuth() {
   $("authPanel").classList.remove("hidden");
   $("storagePanel").classList.add("hidden");
-
   $("userEmail").textContent = "Not signed in";
   $("accountStatus").textContent = "Connect your account";
   $("avatar").textContent = "?";
@@ -165,30 +147,20 @@ function showAuth() {
 function showStorage() {
   $("authPanel").classList.add("hidden");
   $("storagePanel").classList.remove("hidden");
-
   $("userEmail").textContent = currentUser.email;
-  $("accountStatus").textContent =
-    isUnlimited() ? "Unlimited account" : "10 TB account";
-
-  $("avatar").textContent =
-    currentUser.email.charAt(0).toUpperCase();
-
+  $("accountStatus").textContent = isUnlimited() ? "Unlimited account" : "10 TB account";
+  $("avatar").textContent = currentUser.email.charAt(0).toUpperCase();
   $("signOutBtn").classList.remove("hidden");
 }
 
 function setAuthMode(mode) {
   authMode = mode;
-
   $("loginTab").classList.toggle("selected", mode === "login");
   $("signupTab").classList.toggle("selected", mode === "signup");
-
-  $("authSubmit").textContent =
-    mode === "login" ? "Sign in →" : "Create account →";
-
-  $("authMessage").textContent =
-    mode === "login"
-      ? "Use your email and password to continue."
-      : "Create your private cloud account.";
+  $("authSubmit").textContent = mode === "login" ? "Sign in →" : "Create account →";
+  $("authMessage").textContent = mode === "login"
+    ? "Use your email and password to continue."
+    : "Create your private cloud account.";
 }
 
 $("loginTab").addEventListener("click", () => setAuthMode("login"));
@@ -203,32 +175,25 @@ $("authForm").addEventListener("submit", async event => {
 
   const email = $("emailInput").value.trim();
   const password = $("passwordInput").value;
-
   const button = $("authSubmit");
+
   button.disabled = true;
   button.textContent = "Please wait...";
 
   try {
     if (authMode === "login") {
-      const { data, error } = await client.auth.signInWithPassword({
-        email,
-        password
-      });
-
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
       currentUser = data.user;
       showStorage();
       await loadFiles();
       notify("Welcome back to Forever Cloud!");
-
     } else {
       const { data, error } = await client.auth.signUp({
         email,
         password,
-        options: {
-          emailRedirectTo: REDIRECT_URL
-        }
+        options: { emailRedirectTo: REDIRECT_URL }
       });
 
       if (error) throw error;
@@ -240,8 +205,7 @@ $("authForm").addEventListener("submit", async event => {
         notify("Account created!");
       } else {
         notify("Check your email to confirm your account.");
-        $("authMessage").textContent =
-          "Account created. Please confirm your email.";
+        $("authMessage").textContent = "Account created. Please confirm your email.";
       }
     }
   } catch (error) {
@@ -276,36 +240,29 @@ $("signOutBtn").addEventListener("click", async () => {
 // ========================================
 
 function updateQuota() {
-  const used = allFiles.reduce(
-    (sum, file) => sum + getFileSize(file), 0
-  );
-
+  const used = allFiles.reduce((sum, file) => sum + getFileSize(file), 0);
   $("storageUsed").textContent = formatSize(used);
 
-  const hint = $("storageHint");
-
   if (isUnlimited()) {
-    hint.textContent =
-      "Unlimited account quota. Actual provider limits still apply.";
-  } else {
-    const remaining = Math.max(0, STORAGE_LIMIT - used);
-    const percent = Math.min(100, used / STORAGE_LIMIT * 100);
-
-    hint.textContent =
-      `${formatSize(remaining)} remaining of 10 TB`;
-
-    let bar = $("fcQuotaBar");
-
-    if (!bar) {
-      bar = document.createElement("div");
-      bar.id = "fcQuotaBar";
-      bar.className = "fc-quota";
-      $("storagePanel").querySelector(".storage-summary")
-        .appendChild(bar);
-    }
-
-    bar.innerHTML = `<div style="width:${percent}%"></div>`;
+    $("storageHint").textContent = "Unlimited account quota. Actual provider limits still apply.";
+    return;
   }
+
+  const remaining = Math.max(0, STORAGE_LIMIT - used);
+  const percent = Math.min(100, used / STORAGE_LIMIT * 100);
+
+  $("storageHint").textContent = `${formatSize(remaining)} remaining of 10 TB`;
+
+  let bar = $("fcQuotaBar");
+
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "fcQuotaBar";
+    bar.className = "fc-quota";
+    $("storagePanel").querySelector(".storage-summary").appendChild(bar);
+  }
+
+  bar.innerHTML = `<div style="width:${percent}%"></div>`;
 }
 
 // ========================================
@@ -313,36 +270,33 @@ function updateQuota() {
 // ========================================
 
 async function uploadFile(file) {
-  if (!currentUser || !file) return;
+  if (!currentUser || !file) return false;
 
-  const used = allFiles.reduce(
-    (sum, item) => sum + getFileSize(item), 0
-  );
+  const used = allFiles.reduce((sum, item) => sum + getFileSize(item), 0);
 
   if (!isUnlimited() && used + file.size > STORAGE_LIMIT) {
     notify("Storage limit reached! Your account has 10 TB.");
-    return;
+    return false;
   }
 
-  const path =
-    `${currentUser.id}/${Date.now()}_${file.name.replaceAll("/", "_")}`;
+  const safeName = file.name.replace(/[\\/]/g, "_");
+  const path = `${currentUser.id}/${Date.now()}_${safeName}`;
 
   try {
     notify("Uploading " + file.name + "...");
 
-    const { error } = await client.storage
-      .from("user-files")
-      .upload(path, file, {
-        contentType: file.type || "application/octet-stream"
-      });
+    const { error } = await client.storage.from("user-files").upload(path, file, {
+      contentType: file.type || "application/octet-stream"
+    });
 
     if (error) throw error;
 
     notify("Upload successful!");
     await loadFiles();
-
+    return true;
   } catch (error) {
     notify("Upload failed: " + error.message);
+    return false;
   }
 }
 
@@ -354,9 +308,82 @@ $("fileInput").addEventListener("change", async event => {
   for (const file of Array.from(event.target.files)) {
     await uploadFile(file);
   }
-
   event.target.value = "";
 });
+
+// ========================================
+// DOWNLOAD FROM LINK
+// ========================================
+
+async function downloadFromLink() {
+  if (!currentUser) {
+    notify("Please sign in first!");
+    return;
+  }
+
+  const input = prompt("Paste a direct file download URL:");
+
+  if (!input) return;
+
+  let url;
+
+  try {
+    url = new URL(input.trim());
+
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error("Only HTTP and HTTPS links are supported.");
+    }
+  } catch (error) {
+    notify("Invalid download URL.");
+    return;
+  }
+
+  try {
+    notify("Downloading file from link...");
+
+    const response = await fetch(url.href);
+
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
+    }
+
+    const blob = await response.blob();
+
+    if (blob.size === 0) {
+      throw new Error("The downloaded file is empty.");
+    }
+
+    let filename = decodeURIComponent(url.pathname.split("/").pop() || "downloaded-file");
+
+    filename = filename.replace(/[\\/:*?"<>|]/g, "_");
+
+    const contentDisposition = response.headers.get("content-disposition");
+    const match = contentDisposition?.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+
+    if (match) {
+      try {
+        filename = decodeURIComponent(match[1].replace(/"/g, "").trim());
+      } catch {}
+    }
+
+    const file = new File([blob], filename, {
+      type: blob.type || "application/octet-stream"
+    });
+
+    const success = await uploadFile(file);
+
+    if (success) notify("Downloaded and saved to Forever Cloud! ☁️");
+  } catch (error) {
+    console.error(error);
+    notify("Link download failed: " + error.message + ". The source server may block CORS.");
+  }
+}
+
+const downloadLinkButton = $("downloadLinkBtn");
+
+if (downloadLinkButton) {
+  downloadLinkButton.addEventListener("click", downloadFromLink);
+}
 
 // ========================================
 // DRAG AND DROP
@@ -364,9 +391,7 @@ $("fileInput").addEventListener("change", async event => {
 
 const dropZone = $("dropZone");
 
-dropZone.addEventListener("dragover", event => {
-  event.preventDefault();
-});
+dropZone.addEventListener("dragover", event => event.preventDefault());
 
 dropZone.addEventListener("drop", async event => {
   event.preventDefault();
@@ -384,22 +409,15 @@ async function loadFiles() {
   if (!currentUser) return;
 
   try {
-    const { data, error } = await client.storage
-      .from("user-files")
-      .list(currentUser.id, {
-        limit: 100,
-        sortBy: {
-          column: "created_at",
-          order: "desc"
-        }
-      });
+    const { data, error } = await client.storage.from("user-files").list(currentUser.id, {
+      limit: 100,
+      sortBy: { column: "created_at", order: "desc" }
+    });
 
     if (error) throw error;
 
     allFiles = (data || []).filter(file => file.name);
-
     displayFiles();
-
   } catch (error) {
     notify("Loading failed: " + error.message);
   }
@@ -415,10 +433,7 @@ function displayFiles() {
 
   const query = $("searchInput").value.toLowerCase();
 
-  let files = allFiles.filter(file =>
-    file.name.toLowerCase().includes(query)
-  );
-
+  let files = allFiles.filter(file => file.name.toLowerCase().includes(query));
   const sort = $("sortSelect").value;
 
   if (sort === "name") {
@@ -426,42 +441,32 @@ function displayFiles() {
   } else if (sort === "largest") {
     files.sort((a, b) => getFileSize(b) - getFileSize(a));
   } else {
-    files.sort((a, b) =>
-      new Date(b.created_at || 0) - new Date(a.created_at || 0)
-    );
-
+    files.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     if (sort === "oldest") files.reverse();
   }
 
   $("fileCount").textContent = `${allFiles.length} files`;
   $("visibleCount").textContent = files.length;
-
-  $("emptyState").classList.toggle(
-    "hidden", allFiles.length > 0
-  );
+  $("emptyState").classList.toggle("hidden", allFiles.length > 0);
 
   updateQuota();
 
   for (const file of files) {
     const type = getFileType(file);
-
     const item = document.createElement("div");
     item.className = "file-item";
 
     const name = document.createElement("strong");
-    name.textContent =
-      (type === "image" ? "🖼️ " :
-       type === "video" ? "🎬 " :
-       type === "text" ? "📝 " : "📄 ") + file.name;
+    name.textContent = (type === "image" ? "🖼️ " :
+      type === "video" ? "🎬 " :
+      type === "text" ? "📝 " : "📄 ") + file.name;
 
     const size = document.createElement("small");
     size.textContent = formatSize(getFileSize(file));
 
     const open = document.createElement("button");
-    open.textContent =
-      type === "text" ? "Edit" :
+    open.textContent = type === "text" ? "Edit" :
       type === "image" || type === "video" ? "View" : "Open";
-
     open.addEventListener("click", () => openFile(file));
 
     const download = document.createElement("button");
@@ -485,12 +490,8 @@ $("sortSelect").addEventListener("change", displayFiles);
 // ========================================
 
 async function getBlob(file) {
-  const { data, error } = await client.storage
-    .from("user-files")
-    .download(getFilePath(file));
-
+  const { data, error } = await client.storage.from("user-files").download(getFilePath(file));
   if (error) throw error;
-
   return data;
 }
 
@@ -502,13 +503,11 @@ async function downloadFile(file) {
     const link = document.createElement("a");
     link.href = url;
     link.download = file.name;
-
     document.body.appendChild(link);
     link.click();
     link.remove();
 
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-
   } catch (error) {
     notify("Download failed: " + error.message);
   }
@@ -520,7 +519,6 @@ async function downloadFile(file) {
 
 function closeModal() {
   const modal = $("fcModal");
-
   if (modal) modal.remove();
 
   if (previewUrl) {
@@ -548,7 +546,6 @@ function createModal(title) {
   close.addEventListener("click", closeModal);
 
   windowBox.append(heading, close);
-
   modal.appendChild(windowBox);
   document.body.appendChild(modal);
 
@@ -579,12 +576,10 @@ async function openFile(file) {
 
   try {
     const blob = await getBlob(file);
-
     loading.remove();
 
     previewUrl = URL.createObjectURL(blob);
 
-    // IMAGE VIEWER
     if (type === "image") {
       const image = document.createElement("img");
       image.src = previewUrl;
@@ -592,7 +587,6 @@ async function openFile(file) {
       box.appendChild(image);
     }
 
-    // VIDEO PLAYER
     if (type === "video") {
       const video = document.createElement("video");
       video.src = previewUrl;
@@ -601,13 +595,11 @@ async function openFile(file) {
       box.appendChild(video);
     }
 
-    // TEXT EDITOR
     if (type === "text") {
       const editor = document.createElement("textarea");
       editor.className = "fc-editor";
       editor.spellcheck = false;
       editor.value = await blob.text();
-
       box.appendChild(editor);
 
       const actions = document.createElement("div");
@@ -622,23 +614,20 @@ async function openFile(file) {
         save.textContent = "Saving...";
 
         try {
-          const updatedBlob = new Blob(
-            [editor.value],
-            { type: "text/plain;charset=utf-8" }
-          );
+          const updatedBlob = new Blob([editor.value], {
+            type: "text/plain;charset=utf-8"
+          });
 
-          const { error } = await client.storage
-            .from("user-files")
-            .upload(getFilePath(file), updatedBlob, {
-              upsert: true,
-              contentType: "text/plain"
-            });
+          const { error } = await client.storage.from("user-files").upload(
+            getFilePath(file),
+            updatedBlob,
+            { upsert: true, contentType: "text/plain" }
+          );
 
           if (error) throw error;
 
           notify("Text file saved!");
           await loadFiles();
-
         } catch (error) {
           notify("Save failed: " + error.message);
         } finally {
@@ -650,7 +639,6 @@ async function openFile(file) {
       actions.appendChild(save);
       box.appendChild(actions);
     }
-
   } catch (error) {
     loading.textContent = "Could not open file: " + error.message;
   }
@@ -664,15 +652,11 @@ async function deleteFile(file) {
   if (!confirm(`Delete ${file.name}?`)) return;
 
   try {
-    const { error } = await client.storage
-      .from("user-files")
-      .remove([getFilePath(file)]);
-
+    const { error } = await client.storage.from("user-files").remove([getFilePath(file)]);
     if (error) throw error;
 
     notify("File deleted!");
     await loadFiles();
-
   } catch (error) {
     notify("Delete failed: " + error.message);
   }
@@ -698,7 +682,6 @@ async function initializeApp() {
     }
 
     const { data, error } = await client.auth.getSession();
-
     if (error) throw error;
 
     if (data.session) {
@@ -710,7 +693,6 @@ async function initializeApp() {
     }
 
     $("setupNotice").classList.add("hidden");
-
   } catch (error) {
     console.error(error);
     $("setupNotice").classList.remove("hidden");
