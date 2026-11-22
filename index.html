@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -5,65 +6,166 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1020">
   <title>Forever Cloud — Private File Storage</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="./app.js"></script>
+
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <a class="brand" href="#"><span class="brand-mark">✦</span><span>forever<span class="brand-light">cloud</span></span></a>
+      <a class="brand" href="#">
+        <span class="brand-mark">✦</span>
+        <span>forever<span class="brand-light">cloud</span></span>
+      </a>
+
       <div class="sidebar-label">WORKSPACE</div>
       <nav>
-        <button class="nav-item active" id="navFiles"><span>▦</span> My files</button>
+        <button class="nav-item active" id="navFiles">▦ My files</button>
       </nav>
+
       <div class="sidebar-bottom">
-        <div class="secure-card"><div class="secure-icon">⌑</div><strong>Your files, private.</strong><p>Only your signed-in account can access its files.</p></div>
-        <div class="account-mini"><div class="avatar" id="avatar">?</div><div class="account-text"><strong id="userEmail">Not signed in</strong><small id="accountStatus">Connect your account</small></div><button id="signOutBtn" class="icon-btn hidden" title="Sign out">↗</button></div>
+        <div class="secure-card">
+          <div class="secure-icon">⌑</div>
+          <strong>Your files, private.</strong>
+          <p>Only your signed-in account can access its files.</p>
+        </div>
+
+        <div class="account-mini">
+          <div class="avatar" id="avatar">?</div>
+          <div class="account-text">
+            <strong id="userEmail">Not signed in</strong>
+            <small id="accountStatus">Connect your account</small>
+          </div>
+          <button id="signOutBtn" class="icon-btn hidden">↗</button>
+        </div>
       </div>
     </aside>
 
     <main class="main">
       <header class="topbar">
-        <div><div class="eyebrow">PERSONAL STORAGE</div><h1>My files</h1></div>
-        <div class="top-actions"><button class="button button-secondary" id="refreshBtn">↻ <span>Refresh</span></button><button class="button button-primary" id="uploadTopBtn">＋ Upload files</button></div>
+        <div>
+          <div class="eyebrow">PERSONAL STORAGE</div>
+          <h1>My files</h1>
+        </div>
+        <div class="top-actions">
+          <button class="button button-secondary" id="refreshBtn">↻ Refresh</button>
+          <button class="button button-primary" id="uploadTopBtn">＋ Upload files</button>
+        </div>
       </header>
 
-      <section id="setupNotice" class="notice">
-        <div class="notice-icon">⚙</div><div><strong>Connect your Supabase project</strong><p>Add your project URL and anon key in <code>app.js</code>, then run the SQL setup script. Your anon key is designed to be public; never put a service-role key in frontend code.</p></div>
+      <section id="setupNotice" class="notice hidden">
+        <div class="notice-icon">⚙</div>
+        <div>
+          <strong>Connect your Supabase project</strong>
+          <p>Check your Supabase URL, publishable key and JavaScript configuration in app.js.</p>
+        </div>
       </section>
 
       <section id="authPanel" class="auth-panel">
-        <div class="auth-copy"><span class="eyebrow">WELCOME TO YOUR CLOUD</span><h2>Your files.<br><span>Your space.</span></h2><p>Sign in or create an account to keep your files in your own private cloud space.</p><div class="auth-points"><span>✓ Private per-user storage</span><span>✓ Access from any device</span><span>✓ Upload and download anytime</span></div></div>
+        <div class="auth-copy">
+          <span class="eyebrow">WELCOME TO YOUR CLOUD</span>
+          <h2>Your files.<br><span>Your space.</span></h2>
+          <p>Sign in or create an account to keep your files in your own private cloud space.</p>
+          <div class="auth-points">
+            <span>✓ Private per-user storage</span>
+            <span>✓ Access from any device</span>
+            <span>✓ Upload and download anytime</span>
+          </div>
+        </div>
+
         <form id="authForm" class="auth-form">
-          <div class="auth-tabs"><button type="button" class="auth-tab selected" id="loginTab">Sign in</button><button type="button" class="auth-tab" id="signupTab">Create account</button></div>
-          <label>Email address<input id="emailInput" type="email" autocomplete="email" placeholder="you@example.com" required></label>
-          <label>Password<input id="passwordInput" type="password" autocomplete="current-password" placeholder="At least 6 characters" minlength="6" required></label>
-          <button class="button button-primary full" id="authSubmit" type="submit">Sign in <span>→</span></button>
+          <div class="auth-tabs">
+            <button type="button" class="auth-tab selected" id="loginTab">Sign in</button>
+            <button type="button" class="auth-tab" id="signupTab">Create account</button>
+          </div>
+
+          <label>Email address
+            <input id="emailInput" type="email" autocomplete="email" placeholder="you@example.com" required>
+          </label>
+
+          <label>Password
+            <input id="passwordInput" type="password" autocomplete="current-password" placeholder="At least 6 characters" minlength="6" required>
+          </label>
+
+          <button class="button button-primary full" id="authSubmit" type="submit">Sign in →</button>
           <p class="form-note" id="authMessage">Use your email and password to continue.</p>
         </form>
       </section>
 
       <section id="storagePanel" class="hidden">
         <div class="storage-summary">
-          <div class="summary-main"><div class="summary-icon">▤</div><div><span class="eyebrow">YOUR LIBRARY</span><h2 id="fileCount">0 files</h2><p id="storageHint">Your private cloud is ready.</p></div></div>
-          <div class="summary-side"><span>STORAGE USED</span><strong id="storageUsed">0 B</strong><small>Bucket limits depend on your Supabase plan.</small></div>
+          <div class="summary-main">
+            <div class="summary-icon">▤</div>
+            <div>
+              <span class="eyebrow">YOUR LIBRARY</span>
+              <h2 id="fileCount">0 files</h2>
+              <p id="storageHint">Your private cloud is ready.</p>
+            </div>
+          </div>
+          <div class="summary-side">
+            <span>STORAGE USED</span>
+            <strong id="storageUsed">0 B</strong>
+            <small>Bucket limits depend on your Supabase plan.</small>
+          </div>
         </div>
-        <div class="toolbar"><div class="search-wrap"><span>⌕</span><input id="searchInput" type="search" placeholder="Search your files..."></div><select id="sortSelect" aria-label="Sort files"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option><option value="largest">Largest first</option></select></div>
-        <div id="dropZone" class="drop-zone"><div class="upload-symbol">↑</div><div><strong>Drop files here to upload</strong><p>or <button id="browseBtn" class="text-button" type="button">browse from your device</button></p></div><span class="drop-hint">Files are stored in your private cloud</span></div>
+
+        <div class="toolbar">
+          <div class="search-wrap">
+            <span>⌕</span>
+            <input id="searchInput" type="search" placeholder="Search your files...">
+          </div>
+          <select id="sortSelect">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">Name A–Z</option>
+            <option value="largest">Largest first</option>
+          </select>
+        </div>
+
+        <div id="dropZone" class="drop-zone">
+          <div class="upload-symbol">↑</div>
+          <div>
+            <strong>Drop files here to upload</strong>
+            <p>or <button id="browseBtn" class="text-button" type="button">browse from your device</button></p>
+          </div>
+          <span class="drop-hint">Files are stored in your private cloud</span>
+        </div>
+
         <input id="fileInput" type="file" multiple hidden>
-        <div class="section-heading"><h3>All files <span id="visibleCount">0</span></h3><span class="muted">Only you can see these files</span></div>
+
+        <div class="section-heading">
+          <h3>All files <span id="visibleCount">0</span></h3>
+          <span class="muted">Only you can see these files</span>
+        </div>
+
         <div id="fileGrid" class="file-grid"></div>
-        <div id="emptyState" class="empty-state"><div class="empty-art">▱</div><h3>No files yet</h3><p>Upload your first file to get started.</p><button class="button button-primary" id="emptyUploadBtn">＋ Upload a file</button></div>
+
+        <div id="emptyState" class="empty-state">
+          <div class="empty-art">▱</div>
+          <h3>No files yet</h3>
+          <p>Upload your first file to get started.</p>
+          <button class="button button-primary" id="emptyUploadBtn">＋ Upload a file</button>
+        </div>
       </section>
+
       <div id="toast" class="toast" role="status"></div>
-      <footer>FOREVER CLOUD <span>•</span> Built with Supabase <span>•</span> Keep backups of important files</footer>
+
+      <footer>
+        FOREVER CLOUD <span>•</span> Built with Supabase
+        <span>•</span> Keep backups of important files
+      </footer>
     </main>
   </div>
-  <script src="app.js"></script>
+
+  <!-- Load Supabase first -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Load application after HTML -->
+  <script src="./app.js"></script>
 </body>
-</html>
+          </html>
+          
